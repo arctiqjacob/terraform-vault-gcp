@@ -1,0 +1,79 @@
+#!/bin/bash
+
+sudo apt update
+
+sudo apt install software-properties-common --yes
+
+sudo apt-add-repository --yes --update ppa:ansible/ansible
+
+sudo apt install ansible git --yes
+
+%{ if storage_backend == "consul" }
+cat <<EOF > requirements.yml
+- name: ansible-role-consul
+  src: https://github.com/arctiqjacob/ansible-role-consul.git
+
+- name: ansible-role-vault
+  src: https://github.com/arctiqjacob/ansible-role-vault.git
+EOF
+
+cat <<EOF > site.yml
+---
+- hosts: clients
+  become: yes
+  roles:
+    - role: ansible-role-consul
+    - role: ansible-role-vault
+EOF
+
+cat <<EOF > inventory
+[clients]
+127.0.0.1 ansible_connection=local ansible_python_interpreter='python3' provider='gce'
+EOF
+
+mkdir group_vars
+
+cat <<EOF > group_vars/all.yaml
+consul_archive: 'consul_{{ consul_version }}_linux_amd64.zip'
+consul_cloud_tag: '${ consul_cloud_tag }'
+
+vault_storage_backend: '${ storage_backend }'
+EOF
+
+ansible-galaxy install -r requirements.yml
+
+ansible -i inventory servers -m ping
+
+ansible-playbook -i inventory site.yml
+
+%{ else }
+cat <<EOF > requirements.yml
+- name: ansible-role-vault
+  src: https://github.com/arctiqjacob/ansible-role-vault.git
+EOF
+
+cat <<EOF > site.yml
+---
+- hosts: clients
+  become: yes
+  roles:
+    - role: ansible-role-vault
+EOF
+
+cat <<EOF > inventory
+[clients]
+127.0.0.1 ansible_connection=local ansible_python_interpreter='python3'
+EOF
+
+mkdir group_vars
+
+cat <<EOF > group_vars/all.yaml
+vault_storage_backend: 'file'
+EOF
+
+ansible-galaxy install -r requirements.yml
+
+ansible -i inventory servers -m ping
+
+ansible-playbook -i inventory site.yml
+%{ endif }
